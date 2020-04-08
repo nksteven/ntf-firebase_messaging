@@ -22,6 +22,7 @@ Firebase Cloud Messaging plugin for Flutter.
   s.dependency 'Flutter'
   s.dependency 'Firebase/Core'
   s.dependency 'Firebase/Messaging'
+  s.dependency 'ZDCChat'
   s.static_framework = true
   s.ios.deployment_target = '8.0'
 

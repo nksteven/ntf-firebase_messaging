@@ -7,6 +7,7 @@
 #import "FLTFirebaseMessagingPlugin.h"
 
 #import "Firebase/Firebase.h"
+#import <ZDCChat/ZDCChat.h>
 
 NSString *const kGCMMessageIDKey = @"gcm.message_id";
 
@@ -231,6 +232,7 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
   } else {
     [_channel invokeMethod:@"onMessage" arguments:userInfo];
   }
+  [ZDCChat didReceiveRemoteNotification:userInfo];
 }
 
 #pragma mark - AppDelegate
@@ -281,7 +283,7 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
 #else
   [[FIRMessaging messaging] setAPNSToken:deviceToken type:FIRMessagingAPNSTokenTypeProd];
 #endif
-
+  [ZDCChat setPushToken:tokenData];
   [_channel invokeMethod:@"onToken" arguments:[FIRMessaging messaging].FCMToken];
 }
 
