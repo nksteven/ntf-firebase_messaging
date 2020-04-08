@@ -283,7 +283,7 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
 #else
   [[FIRMessaging messaging] setAPNSToken:deviceToken type:FIRMessagingAPNSTokenTypeProd];
 #endif
-  [ZDCChat setPushToken:tokenData];
+  [ZDCChat setPushToken:deviceToken];
   [_channel invokeMethod:@"onToken" arguments:[FIRMessaging messaging].FCMToken];
 }
 
