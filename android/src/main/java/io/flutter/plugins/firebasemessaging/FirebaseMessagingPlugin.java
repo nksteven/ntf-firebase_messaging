@@ -4,7 +4,6 @@
 
 package io.flutter.plugins.firebasemessaging;
 
-import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -20,10 +19,6 @@ import com.google.firebase.iid.FirebaseInstanceId;
 import com.google.firebase.iid.InstanceIdResult;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.RemoteMessage;
-import io.flutter.embedding.engine.plugins.FlutterPlugin;
-import io.flutter.embedding.engine.plugins.activity.ActivityAware;
-import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
-import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
@@ -36,75 +31,31 @@ import java.util.Map;
 
 /** FirebaseMessagingPlugin */
 public class FirebaseMessagingPlugin extends BroadcastReceiver
-    implements MethodCallHandler, NewIntentListener, FlutterPlugin, ActivityAware {
+    implements MethodCallHandler, NewIntentListener {
+  private final Registrar registrar;
+  private final MethodChannel channel;
 
   private static final String CLICK_ACTION_VALUE = "FLUTTER_NOTIFICATION_CLICK";
   private static final String TAG = "FirebaseMessagingPlugin";
 
-  private MethodChannel channel;
-  private Context applicationContext;
-  private Activity mainActivity;
-
   public static void registerWith(Registrar registrar) {
-    FirebaseMessagingPlugin instance = new FirebaseMessagingPlugin();
-    instance.setActivity(registrar.activity());
-    registrar.addNewIntentListener(instance);
-    instance.onAttachedToEngine(registrar.context(), registrar.messenger());
+    final MethodChannel channel =
+        new MethodChannel(registrar.messenger(), "plugins.flutter.io/firebase_messaging");
+    final FirebaseMessagingPlugin plugin = new FirebaseMessagingPlugin(registrar, channel);
+    registrar.addNewIntentListener(plugin);
+    channel.setMethodCallHandler(plugin);
   }
 
-  private void onAttachedToEngine(Context context, BinaryMessenger binaryMessenger) {
-    this.applicationContext = context;
-    FirebaseApp.initializeApp(applicationContext);
-    channel = new MethodChannel(binaryMessenger, "plugins.flutter.io/firebase_messaging");
-    final MethodChannel backgroundCallbackChannel =
-        new MethodChannel(binaryMessenger, "plugins.flutter.io/firebase_messaging_background");
+  private FirebaseMessagingPlugin(Registrar registrar, MethodChannel channel) {
+    this.registrar = registrar;
+    this.channel = channel;
+    FirebaseApp.initializeApp(registrar.context());
 
-    channel.setMethodCallHandler(this);
-    backgroundCallbackChannel.setMethodCallHandler(this);
-    FlutterFirebaseMessagingService.setBackgroundChannel(backgroundCallbackChannel);
-
-    // Register broadcast receiver
     IntentFilter intentFilter = new IntentFilter();
     intentFilter.addAction(FlutterFirebaseMessagingService.ACTION_TOKEN);
     intentFilter.addAction(FlutterFirebaseMessagingService.ACTION_REMOTE_MESSAGE);
-    LocalBroadcastManager manager = LocalBroadcastManager.getInstance(applicationContext);
+    LocalBroadcastManager manager = LocalBroadcastManager.getInstance(registrar.context());
     manager.registerReceiver(this, intentFilter);
-  }
-
-  private void setActivity(Activity flutterActivity) {
-    this.mainActivity = flutterActivity;
-  }
-
-  @Override
-  public void onAttachedToEngine(FlutterPluginBinding binding) {
-    onAttachedToEngine(binding.getApplicationContext(), binding.getBinaryMessenger());
-  }
-
-  @Override
-  public void onDetachedFromEngine(FlutterPluginBinding binding) {
-    LocalBroadcastManager.getInstance(binding.getApplicationContext()).unregisterReceiver(this);
-  }
-
-  @Override
-  public void onAttachedToActivity(ActivityPluginBinding binding) {
-    binding.addOnNewIntentListener(this);
-    this.mainActivity = binding.getActivity();
-  }
-
-  @Override
-  public void onDetachedFromActivityForConfigChanges() {
-    this.mainActivity = null;
-  }
-
-  @Override
-  public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {
-    binding.addOnNewIntentListener(this);
-    this.mainActivity = binding.getActivity();
-  }
-
-  @Override
-  public void onDetachedFromActivity() {
-    this.mainActivity = null;
   }
 
   // BroadcastReceiver implementation.
@@ -148,39 +99,7 @@ public class FirebaseMessagingPlugin extends BroadcastReceiver
 
   @Override
   public void onMethodCall(final MethodCall call, final Result result) {
-    /*  Even when the app is not active the `FirebaseMessagingService` extended by
-     *  `FlutterFirebaseMessagingService` allows incoming FCM messages to be handled.
-     *
-     *  `FcmDartService#start` and `FcmDartService#initialized` are the two methods used
-     *  to optionally setup handling messages received while the app is not active.
-     *
-     *  `FcmDartService#start` sets up the plumbing that allows messages received while
-     *  the app is not active to be handled by a background isolate.
-     *
-     *  `FcmDartService#initialized` is called by the Dart side when the plumbing for
-     *  background message handling is complete.
-     */
-    if ("FcmDartService#start".equals(call.method)) {
-      long setupCallbackHandle = 0;
-      long backgroundMessageHandle = 0;
-      try {
-        @SuppressWarnings("unchecked")
-        Map<String, Long> callbacks = ((Map<String, Long>) call.arguments);
-        setupCallbackHandle = callbacks.get("setupHandle");
-        backgroundMessageHandle = callbacks.get("backgroundHandle");
-      } catch (Exception e) {
-        Log.e(TAG, "There was an exception when getting callback handle from Dart side");
-        e.printStackTrace();
-      }
-      FlutterFirebaseMessagingService.setBackgroundSetupHandle(mainActivity, setupCallbackHandle);
-      FlutterFirebaseMessagingService.startBackgroundIsolate(mainActivity, setupCallbackHandle);
-      FlutterFirebaseMessagingService.setBackgroundMessageHandle(
-          mainActivity, backgroundMessageHandle);
-      result.success(true);
-    } else if ("FcmDartService#initialized".equals(call.method)) {
-      FlutterFirebaseMessagingService.onInitialized();
-      result.success(true);
-    } else if ("configure".equals(call.method)) {
+    if ("configure".equals(call.method)) {
       FirebaseInstanceId.getInstance()
           .getInstanceId()
           .addOnCompleteListener(
@@ -194,44 +113,18 @@ public class FirebaseMessagingPlugin extends BroadcastReceiver
                   channel.invokeMethod("onToken", task.getResult().getToken());
                 }
               });
-      if (mainActivity != null) {
-        sendMessageFromIntent("onLaunch", mainActivity.getIntent());
+      if (registrar.activity() != null) {
+        sendMessageFromIntent("onLaunch", registrar.activity().getIntent());
       }
       result.success(null);
     } else if ("subscribeToTopic".equals(call.method)) {
       String topic = call.arguments();
-      FirebaseMessaging.getInstance()
-          .subscribeToTopic(topic)
-          .addOnCompleteListener(
-              new OnCompleteListener<Void>() {
-                @Override
-                public void onComplete(@NonNull Task<Void> task) {
-                  if (!task.isSuccessful()) {
-                    Exception e = task.getException();
-                    Log.w(TAG, "subscribeToTopic error", e);
-                    result.error("subscribeToTopic", e.getMessage(), null);
-                    return;
-                  }
-                  result.success(null);
-                }
-              });
+      FirebaseMessaging.getInstance().subscribeToTopic(topic);
+      result.success(null);
     } else if ("unsubscribeFromTopic".equals(call.method)) {
       String topic = call.arguments();
-      FirebaseMessaging.getInstance()
-          .unsubscribeFromTopic(topic)
-          .addOnCompleteListener(
-              new OnCompleteListener<Void>() {
-                @Override
-                public void onComplete(@NonNull Task<Void> task) {
-                  if (!task.isSuccessful()) {
-                    Exception e = task.getException();
-                    Log.w(TAG, "unsubscribeFromTopic error", e);
-                    result.error("unsubscribeFromTopic", e.getMessage(), null);
-                    return;
-                  }
-                  result.success(null);
-                }
-              });
+      FirebaseMessaging.getInstance().unsubscribeFromTopic(topic);
+      result.success(null);
     } else if ("getToken".equals(call.method)) {
       FirebaseInstanceId.getInstance()
           .getInstanceId()
@@ -255,26 +148,10 @@ public class FirebaseMessagingPlugin extends BroadcastReceiver
                 public void run() {
                   try {
                     FirebaseInstanceId.getInstance().deleteInstanceId();
-                    if (mainActivity != null) {
-                      mainActivity.runOnUiThread(
-                          new Runnable() {
-                            @Override
-                            public void run() {
-                              result.success(true);
-                            }
-                          });
-                    }
+                    result.success(true);
                   } catch (IOException ex) {
                     Log.e(TAG, "deleteInstanceID, error:", ex);
-                    if (mainActivity != null) {
-                      mainActivity.runOnUiThread(
-                          new Runnable() {
-                            @Override
-                            public void run() {
-                              result.success(false);
-                            }
-                          });
-                    }
+                    result.success(false);
                   }
                 }
               })
@@ -293,8 +170,8 @@ public class FirebaseMessagingPlugin extends BroadcastReceiver
   @Override
   public boolean onNewIntent(Intent intent) {
     boolean res = sendMessageFromIntent("onResume", intent);
-    if (res && mainActivity != null) {
-      mainActivity.setIntent(intent);
+    if (res && registrar.activity() != null) {
+      registrar.activity().setIntent(intent);
     }
     return res;
   }
