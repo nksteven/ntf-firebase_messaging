@@ -242,6 +242,9 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
   if (launchOptions != nil) {
     _launchNotification = launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
   }
+  if (@available(iOS 10.0, *)) {
+    [UNUserNotificationCenter currentNotificationCenter].delegate = (id<UNUserNotificationCenterDelegate>) self;
+  }
   return YES;
 }
 
