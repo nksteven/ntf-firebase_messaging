@@ -7,7 +7,7 @@
 #import "FLTFirebaseMessagingPlugin.h"
 
 #import "Firebase/Firebase.h"
-#import <ZDCChat/ZDCChat.h>
+@import ChatProvidersSDK;
 
 NSString *const kGCMMessageIDKey = @"gcm.message_id";
 
@@ -141,7 +141,8 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
   } else if ([@"configure" isEqualToString:method]) {
     [FIRMessaging messaging].shouldEstablishDirectChannel = true;
     [[UIApplication sharedApplication] registerForRemoteNotifications];
-    if (_launchNotification != nil && _launchNotification[kGCMMessageIDKey]) {
+//  if (_launchNotification != nil && _launchNotification[kGCMMessageIDKey]) {
+    if (_launchNotification != nil) {
       [_channel invokeMethod:@"onLaunch" arguments:_launchNotification];
     }
     result(nil);
@@ -210,6 +211,9 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
     [[FIRMessaging messaging] appDidReceiveMessage:userInfo];
     [_channel invokeMethod:@"onMessage" arguments:userInfo];
     completionHandler(UNNotificationPresentationOptionNone);
+  } else {
+    [_channel invokeMethod:@"onMessage" arguments:userInfo];
+    completionHandler(UNNotificationPresentationOptionAlert | UNNotificationPresentationOptionSound | UNNotificationPresentationOptionBadge);
   }
 }
 
@@ -218,10 +222,10 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
              withCompletionHandler:(void (^)(void))completionHandler NS_AVAILABLE_IOS(10.0) {
   NSDictionary *userInfo = response.notification.request.content.userInfo;
   // Check to key to ensure we only handle messages from Firebase
-  if (userInfo[kGCMMessageIDKey]) {
+//  if (userInfo[kGCMMessageIDKey]) {
     [_channel invokeMethod:@"onResume" arguments:userInfo];
     completionHandler();
-  }
+//  }
 }
 
 #endif
@@ -232,7 +236,8 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
   } else {
     [_channel invokeMethod:@"onMessage" arguments:userInfo];
   }
-  [ZDCChat didReceiveRemoteNotification:userInfo];
+    UIApplication *application = [UIApplication sharedApplication];
+    [ZDKChat didReceiveRemoteNotification:userInfo in:application];
 }
 
 #pragma mark - AppDelegate
@@ -241,6 +246,9 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
   if (launchOptions != nil) {
     _launchNotification = launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
+  }
+  if (@available(iOS 10.0, *)) {
+    [UNUserNotificationCenter currentNotificationCenter].delegate = (id<UNUserNotificationCenterDelegate>) self;
   }
   return YES;
 }
@@ -251,20 +259,8 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
 
 - (void)applicationDidBecomeActive:(UIApplication *)application {
   _resumingFromBackground = NO;
-  // Clears push notifications from the notification center, with the
-  // side effect of resetting the badge count. We need to clear notifications
-  // because otherwise the user could tap notifications in the notification
-  // center while the app is in the foreground, and we wouldn't be able to
-  // distinguish that case from the case where a message came in and the
-  // user dismissed the notification center without tapping anything.
-  // TODO(goderbauer): Revisit this behavior once we provide an API for managing
-  // the badge number, or if we add support for running Dart in the background.
-  // Setting badgeNumber to 0 is a no-op (= notifications will not be cleared)
-  // if it is already 0,
-  // therefore the next line is setting it to 1 first before clearing it again
-  // to remove all
-  // notifications.
-  application.applicationIconBadgeNumber = 1;
+  // Removes badge number but doesn't clear push notifications,
+  // helpful when you have valuable info in your push notification
   application.applicationIconBadgeNumber = 0;
 }
 
@@ -283,8 +279,9 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
 #else
   [[FIRMessaging messaging] setAPNSToken:deviceToken type:FIRMessagingAPNSTokenTypeProd];
 #endif
-  [ZDCChat setPushToken:deviceToken];
   [_channel invokeMethod:@"onToken" arguments:[FIRMessaging messaging].FCMToken];
+    
+    [ZDKChat registerPushToken:deviceToken];
 }
 
 // This will only be called for iOS < 10. For iOS >= 10, we make this call when we request
