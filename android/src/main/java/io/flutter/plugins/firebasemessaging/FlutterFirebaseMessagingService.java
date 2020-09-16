@@ -92,6 +92,18 @@ public class FlutterFirebaseMessagingService extends FirebaseMessagingService {
       intent.putExtra(EXTRA_REMOTE_MESSAGE, remoteMessage);
       LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
     } else {
+      //Determine if it's a push message from Live Chat
+      if(remoteMessage.getNotification()==null){
+        if(remoteMessage.getData()!=null&&remoteMessage.getData().containsKey("data")){
+          String data=remoteMessage.getData().get("data");
+          if(data.indexOf("author")!=-1){
+            Intent intent = new Intent(ACTION_REMOTE_MESSAGE);
+            intent.putExtra(EXTRA_REMOTE_MESSAGE, remoteMessage);
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+            return;
+          }
+        }
+      }
       // If background isolate is not running yet, put message in queue and it will be handled
       // when the isolate starts.
       if (!isIsolateRunning.get()) {
