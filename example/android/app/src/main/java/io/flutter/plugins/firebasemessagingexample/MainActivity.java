@@ -13,8 +13,8 @@ public class MainActivity extends FlutterActivity {
 
   // TODO(kroikie): Remove this once v2 of GeneratedPluginRegistrant rolls to stable. https://github.com/flutter/flutter/issues/42694
   @Override
-  protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    GeneratedPluginRegistrant.registerWith(this);
+  public void configureFlutterEngine(FlutterEngine flutterEngine) {
+    flutterEngine.getPlugins().add(new FirebaseMessagingPlugin());
+    flutterEngine.getPlugins().add(new E2EPlugin());
   }
 }

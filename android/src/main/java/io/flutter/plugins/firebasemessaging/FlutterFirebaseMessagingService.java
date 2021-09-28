@@ -4,10 +4,31 @@
 
 package io.flutter.plugins.firebasemessaging;
 
+import android.app.ActivityManager;
+import android.app.KeyguardManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Process;
+import android.util.Log;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
+import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.PluginRegistry;
+import io.flutter.view.FlutterCallbackInformation;
+import io.flutter.view.FlutterMain;
+import io.flutter.view.FlutterNativeView;
+import io.flutter.view.FlutterRunArguments;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FlutterFirebaseMessagingService extends FirebaseMessagingService {
 
@@ -18,16 +39,81 @@ public class FlutterFirebaseMessagingService extends FirebaseMessagingService {
   public static final String ACTION_TOKEN = "io.flutter.plugins.firebasemessaging.TOKEN";
   public static final String EXTRA_TOKEN = "token";
 
+  private static final String SHARED_PREFERENCES_KEY = "io.flutter.android_fcm_plugin";
+  private static final String BACKGROUND_SETUP_CALLBACK_HANDLE_KEY = "background_setup_callback";
+  private static final String BACKGROUND_MESSAGE_CALLBACK_HANDLE_KEY =
+      "background_message_callback";
+
+  // TODO(kroikie): make isIsolateRunning per-instance, not static.
+  private static AtomicBoolean isIsolateRunning = new AtomicBoolean(false);
+
+  /** Background Dart execution context. */
+  private static FlutterNativeView backgroundFlutterView;
+
+  private static MethodChannel backgroundChannel;
+
+  private static Long backgroundMessageHandle;
+
+  private static List<RemoteMessage> backgroundMessageQueue =
+      Collections.synchronizedList(new LinkedList<RemoteMessage>());
+
+  private static PluginRegistry.PluginRegistrantCallback pluginRegistrantCallback;
+
+  private static final String TAG = "FlutterFcmService";
+
+  private static Context backgroundContext;
+
+  @Override
+  public void onCreate() {
+    super.onCreate();
+
+    backgroundContext = getApplicationContext();
+    FlutterMain.ensureInitializationComplete(backgroundContext, null);
+
+    // If background isolate is not running start it.
+    if (!isIsolateRunning.get()) {
+      SharedPreferences p = backgroundContext.getSharedPreferences(SHARED_PREFERENCES_KEY, 0);
+      long callbackHandle = p.getLong(BACKGROUND_SETUP_CALLBACK_HANDLE_KEY, 0);
+      startBackgroundIsolate(backgroundContext, callbackHandle);
+    }
+  }
+
   /**
    * Called when message is received.
    *
    * @param remoteMessage Object representing the message received from Firebase Cloud Messaging.
    */
   @Override
-  public void onMessageReceived(RemoteMessage remoteMessage) {
-    Intent intent = new Intent(ACTION_REMOTE_MESSAGE);
-    intent.putExtra(EXTRA_REMOTE_MESSAGE, remoteMessage);
-    LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+  public void onMessageReceived(final RemoteMessage remoteMessage) {
+    // If application is running in the foreground use local broadcast to handle message.
+    // Otherwise use the background isolate to handle message.
+    if (isApplicationForeground(this)) {
+      Intent intent = new Intent(ACTION_REMOTE_MESSAGE);
+      intent.putExtra(EXTRA_REMOTE_MESSAGE, remoteMessage);
+      LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+    } else {
+      // If background isolate is not running yet, put message in queue and it will be handled
+      // when the isolate starts.
+      if (!isIsolateRunning.get()) {
+        backgroundMessageQueue.add(remoteMessage);
+      } else {
+        final CountDownLatch latch = new CountDownLatch(1);
+        new Handler(getMainLooper())
+            .post(
+                new Runnable() {
+                  @Override
+                  public void run() {
+                    executeDartCallbackInBackgroundIsolate(
+                        FlutterFirebaseMessagingService.this, remoteMessage, latch);
+                  }
+                });
+        try {
+          latch.await();
+        } catch (InterruptedException ex) {
+          Log.i(TAG, "Exception waiting to execute Dart callback", ex);
+        }
+      }
+    }
   }
 
   /**
