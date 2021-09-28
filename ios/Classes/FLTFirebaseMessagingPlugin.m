@@ -7,7 +7,7 @@
 #import "FLTFirebaseMessagingPlugin.h"
 
 #import "Firebase/Firebase.h"
-@import ChatProvidersSDK;
+#import <ZendeskSDKMessaging/ZendeskSDKMessaging.h>
 
 NSString *const kGCMMessageIDKey = @"gcm.message_id";
 
@@ -237,7 +237,6 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
     [_channel invokeMethod:@"onMessage" arguments:userInfo];
   }
     UIApplication *application = [UIApplication sharedApplication];
-    [ZDKChat didReceiveRemoteNotification:userInfo in:application];
 }
 
 #pragma mark - AppDelegate
@@ -280,8 +279,8 @@ static NSObject<FlutterPluginRegistrar> *_registrar;
   [[FIRMessaging messaging] setAPNSToken:deviceToken type:FIRMessagingAPNSTokenTypeProd];
 #endif
   [_channel invokeMethod:@"onToken" arguments:[FIRMessaging messaging].FCMToken];
-    
-    [ZDKChat registerPushToken:deviceToken];
+
+    [ZDKPushNotifications updatePushNotificationToken:deviceToken];
 }
 
 // This will only be called for iOS < 10. For iOS >= 10, we make this call when we request
