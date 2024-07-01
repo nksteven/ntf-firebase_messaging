@@ -25,19 +25,24 @@ apply plugin: 'com.android.application'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-    compileSdkVersion 28
+    namespace 'io.flutter.plugins.firebase.messaging.example'
+
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "io.flutter.plugins.firebase.messaging.example"
+        minSdk 21
+        targetSdk 33
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     lintOptions {
         disable 'InvalidPackage'
-    }
-
-    defaultConfig {
-        applicationId 'io.flutter.plugins.firebasemessagingexample'
-        minSdkVersion 16
-        targetSdkVersion 28
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -52,12 +57,3 @@ android {
 flutter {
     source '../..'
 }
-
-dependencies {
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test:runner:1.2.0'
-    androidTestImplementation 'androidx.test:rules:1.2.0'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
-}
-
-apply plugin: 'com.google.gms.google-services'
