@@ -1,197 +1,247 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// ignore_for_file: require_trailing_commas
+// Copyright 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// ignore_for_file: avoid_redundant_argument_values
+
 import 'dart:async';
 
-import 'package:flutter/services.dart';
+import 'package:async/async.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_test/flutter_test.dart' show TestWidgetsFlutterBinding;
+import 'package:firebase_messaging_platform_interface/firebase_messaging_platform_interface.dart';
+import 'package:firebase_messaging_platform_interface/src/utils.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
-import 'package:platform/platform.dart';
-import 'package:test/test.dart';
+
+import './mock.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  setupFirebaseMessagingMocks();
+  FirebaseMessaging? messaging;
 
-  MockMethodChannel mockChannel;
-  FirebaseMessaging firebaseMessaging;
+  group('$FirebaseMessaging', () {
+    setUpAll(() async {
+      await Firebase.initializeApp();
+      FirebaseMessagingPlatform.instance = kMockMessagingPlatform;
+      messaging = FirebaseMessaging.instance;
+    });
+    group('instance', () {
+      test('returns an instance', () async {
+        expect(messaging, isA<FirebaseMessaging>());
+      });
 
-  setUp(() {
-    mockChannel = MockMethodChannel();
-    firebaseMessaging = FirebaseMessaging.private(
-        mockChannel, FakePlatform(operatingSystem: 'ios'));
-  });
+      test('returns the correct $FirebaseApp', () {
+        expect(messaging!.app, isA<FirebaseApp>());
+        expect(messaging!.app.name, defaultFirebaseAppName);
+      });
+    });
 
-  test('requestNotificationPermissions on ios with default permissions', () {
-    firebaseMessaging.requestNotificationPermissions();
-    verify(mockChannel.invokeMethod<void>(
-        'requestNotificationPermissions', <String, bool>{
-      'sound': true,
-      'badge': true,
-      'alert': true,
-      'provisional': false
-    }));
-  });
+    group('get.isAutoInitEnabled', () {
+      test('verify delegate method is called', () {
+        // verify isAutoInitEnabled returns true
+        when(kMockMessagingPlatform.isAutoInitEnabled).thenReturn(true);
+        var result = messaging!.isAutoInitEnabled;
 
-  test('requestNotificationPermissions on ios with custom permissions', () {
-    firebaseMessaging.requestNotificationPermissions(
-        const IosNotificationSettings(sound: false, provisional: true));
-    verify(mockChannel.invokeMethod<void>(
-        'requestNotificationPermissions', <String, bool>{
-      'sound': false,
-      'badge': true,
-      'alert': true,
-      'provisional': true
-    }));
-  });
+        expect(result, isA<bool>());
+        expect(result, isTrue);
+        verify(kMockMessagingPlatform.isAutoInitEnabled);
 
-  test('requestNotificationPermissions on android', () {
-    firebaseMessaging = FirebaseMessaging.private(
-        mockChannel, FakePlatform(operatingSystem: 'android'));
+        // verify isAutoInitEnabled returns false
+        when(kMockMessagingPlatform.isAutoInitEnabled).thenReturn(false);
+        result = messaging!.isAutoInitEnabled;
 
-    firebaseMessaging.requestNotificationPermissions();
-    verifyZeroInteractions(mockChannel);
-  });
+        expect(result, isA<bool>());
+        expect(result, isFalse);
+        verify(kMockMessagingPlatform.isAutoInitEnabled);
+      });
+    });
 
-  test('requestNotificationPermissions on android', () {
-    firebaseMessaging = FirebaseMessaging.private(
-        mockChannel, FakePlatform(operatingSystem: 'android'));
+    group('getInitialMessage', () {
+      test('verify delegate method is called', () async {
+        const senderId = 'test-notification';
+        RemoteMessage message = const RemoteMessage(senderId: senderId);
+        when(kMockMessagingPlatform.getInitialMessage())
+            .thenAnswer((_) => Future.value(message));
 
-    firebaseMessaging.requestNotificationPermissions();
-    verifyZeroInteractions(mockChannel);
-  });
+        final result = await messaging!.getInitialMessage();
 
-  test('configure', () {
-    firebaseMessaging.configure();
-    verify(mockChannel.setMethodCallHandler(any));
-    verify(mockChannel.invokeMethod<void>('configure'));
-  });
+        expect(result, isA<RemoteMessage>());
+        expect(result!.senderId, senderId);
 
-  test('incoming token', () async {
-    firebaseMessaging.configure();
-    final dynamic handler =
-        verify(mockChannel.setMethodCallHandler(captureAny)).captured.single;
-    final String token1 = 'I am a super secret token';
-    final String token2 = 'I am the new token in town';
-    Future<String> tokenFromStream = firebaseMessaging.onTokenRefresh.first;
-    await handler(MethodCall('onToken', token1));
+        verify(kMockMessagingPlatform.getInitialMessage());
+      });
+    });
 
-    expect(await tokenFromStream, token1);
+    group('deleteToken', () {
+      test('verify delegate method is called with correct args', () async {
+        when(kMockMessagingPlatform.deleteToken())
+            .thenAnswer((_) => Future.value());
 
-    tokenFromStream = firebaseMessaging.onTokenRefresh.first;
-    await handler(MethodCall('onToken', token2));
+        await messaging!.deleteToken();
 
-    expect(await tokenFromStream, token2);
-  });
+        verify(kMockMessagingPlatform.deleteToken());
+      });
+    });
 
-  test('incoming iOS settings', () async {
-    firebaseMessaging.configure();
-    final dynamic handler =
-        verify(mockChannel.setMethodCallHandler(captureAny)).captured.single;
-    IosNotificationSettings iosSettings = const IosNotificationSettings();
+    group('getAPNSToken', () {
+      test('verify delegate method is called', () async {
+        const apnsToken = 'test-apns';
+        when(kMockMessagingPlatform.getAPNSToken())
+            .thenAnswer((_) => Future.value(apnsToken));
 
-    Future<IosNotificationSettings> iosSettingsFromStream =
-        firebaseMessaging.onIosSettingsRegistered.first;
-    await handler(MethodCall('onIosSettingsRegistered', iosSettings.toMap()));
-    expect((await iosSettingsFromStream).toMap(), iosSettings.toMap());
+        await messaging!.getAPNSToken();
 
-    iosSettings = const IosNotificationSettings(sound: false);
-    iosSettingsFromStream = firebaseMessaging.onIosSettingsRegistered.first;
-    await handler(MethodCall('onIosSettingsRegistered', iosSettings.toMap()));
-    expect((await iosSettingsFromStream).toMap(), iosSettings.toMap());
-  });
+        verify(kMockMessagingPlatform.getAPNSToken());
+      });
+    });
+    group('getToken', () {
+      test('verify delegate method is called with correct args', () async {
+        const vapidKey = 'test-vapid-key';
+        when(kMockMessagingPlatform.getToken(vapidKey: anyNamed('vapidKey')))
+            .thenAnswer((_) => Future.value(''));
 
-  test('incoming messages', () async {
-    final Completer<dynamic> onMessage = Completer<dynamic>();
-    final Completer<dynamic> onLaunch = Completer<dynamic>();
-    final Completer<dynamic> onResume = Completer<dynamic>();
+        await messaging!.getToken(vapidKey: vapidKey);
 
-    firebaseMessaging.configure(
-      onMessage: (dynamic m) async {
-        onMessage.complete(m);
-      },
-      onLaunch: (dynamic m) async {
-        onLaunch.complete(m);
-      },
-      onResume: (dynamic m) async {
-        onResume.complete(m);
-      },
-      onBackgroundMessage: validOnBackgroundMessage,
-    );
-    final dynamic handler =
-        verify(mockChannel.setMethodCallHandler(captureAny)).captured.single;
+        verify(kMockMessagingPlatform.getToken(vapidKey: vapidKey));
+      });
+    });
 
-    final Map<String, dynamic> onMessageMessage = <String, dynamic>{};
-    final Map<String, dynamic> onLaunchMessage = <String, dynamic>{};
-    final Map<String, dynamic> onResumeMessage = <String, dynamic>{};
+    group('onTokenRefresh', () {
+      test('verify delegate method is called', () async {
+        const token = 'test-token';
 
-    await handler(MethodCall('onMessage', onMessageMessage));
-    expect(await onMessage.future, onMessageMessage);
-    expect(onLaunch.isCompleted, isFalse);
-    expect(onResume.isCompleted, isFalse);
+        when(kMockMessagingPlatform.onTokenRefresh)
+            .thenAnswer((_) => Stream<String>.fromIterable(<String>[token]));
 
-    await handler(MethodCall('onLaunch', onLaunchMessage));
-    expect(await onLaunch.future, onLaunchMessage);
-    expect(onResume.isCompleted, isFalse);
+        final StreamQueue<String> changes =
+            StreamQueue<String>(messaging!.onTokenRefresh);
+        expect(await changes.next, isA<String>());
 
-    await handler(MethodCall('onResume', onResumeMessage));
-    expect(await onResume.future, onResumeMessage);
-  });
+        verify(kMockMessagingPlatform.onTokenRefresh);
+      });
+    });
+    group('requestPermission', () {
+      test('verify delegate method is called with correct args', () async {
+        when(kMockMessagingPlatform.requestPermission(
+          alert: anyNamed('alert'),
+          announcement: anyNamed('announcement'),
+          badge: anyNamed('badge'),
+          carPlay: anyNamed('carPlay'),
+          criticalAlert: anyNamed('criticalAlert'),
+          provisional: anyNamed('provisional'),
+          sound: anyNamed('sound'),
+          providesAppNotificationSettings:
+              anyNamed('providesAppNotificationSettings'),
+        )).thenAnswer((_) => Future.value(defaultNotificationSettings));
 
-  const String myTopic = 'Flutter';
+        // true values
+        await messaging!.requestPermission(
+          alert: true,
+          announcement: true,
+          badge: true,
+          carPlay: true,
+          criticalAlert: true,
+          provisional: true,
+          sound: true,
+          providesAppNotificationSettings: true,
+        );
 
-  test('subscribe to topic', () async {
-    await firebaseMessaging.subscribeToTopic(myTopic);
-    verify(mockChannel.invokeMethod<void>('subscribeToTopic', myTopic));
-  });
+        verify(kMockMessagingPlatform.requestPermission(
+          alert: true,
+          announcement: true,
+          badge: true,
+          carPlay: true,
+          criticalAlert: true,
+          provisional: true,
+          sound: true,
+          providesAppNotificationSettings: true,
+        ));
 
-  test('unsubscribe from topic', () async {
-    await firebaseMessaging.unsubscribeFromTopic(myTopic);
-    verify(mockChannel.invokeMethod<void>('unsubscribeFromTopic', myTopic));
-  });
+        // false values
+        await messaging!.requestPermission(
+          alert: false,
+          announcement: false,
+          badge: false,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: false,
+          providesAppNotificationSettings: false,
+        );
 
-  test('getToken', () {
-    firebaseMessaging.getToken();
-    verify(mockChannel.invokeMethod<String>('getToken'));
-  });
+        verify(kMockMessagingPlatform.requestPermission(
+          alert: false,
+          announcement: false,
+          badge: false,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: false,
+          providesAppNotificationSettings: false,
+        ));
 
-  test('deleteInstanceID', () {
-    firebaseMessaging.deleteInstanceID();
-    verify(mockChannel.invokeMethod<bool>('deleteInstanceID'));
-  });
+        // default values
+        await messaging!.requestPermission();
 
-  test('autoInitEnabled', () {
-    firebaseMessaging.autoInitEnabled();
-    verify(mockChannel.invokeMethod<bool>('autoInitEnabled'));
-  });
+        verify(kMockMessagingPlatform.requestPermission(
+          alert: true,
+          announcement: false,
+          badge: true,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: true,
+          providesAppNotificationSettings: false,
+        ));
+      });
+    });
 
-  test('setAutoInitEnabled', () {
-    // assert that we havent called the method yet
-    verifyNever(firebaseMessaging.setAutoInitEnabled(true));
+    group('setAutoInitEnabled', () {
+      test('verify delegate method is called with correct args', () async {
+        when(kMockMessagingPlatform.setAutoInitEnabled(any))
+            .thenAnswer((_) => Future<void>.value());
 
-    firebaseMessaging.setAutoInitEnabled(true);
+        await messaging!.setAutoInitEnabled(false);
+        verify(kMockMessagingPlatform.setAutoInitEnabled(false));
 
-    verify(mockChannel.invokeMethod<void>('setAutoInitEnabled', true));
+        await messaging!.setAutoInitEnabled(true);
+        verify(kMockMessagingPlatform.setAutoInitEnabled(true));
+      });
+    });
+    group('subscribeToTopic', () {
+      // setUp(() {
+      //   when(kMockMessagingPlatform.subscribeToTopic(''))
+      //       .thenAnswer((_) => Future<void>.value());
+      // });
 
-    // assert that enabled = false was not yet called
-    verifyNever(firebaseMessaging.setAutoInitEnabled(false));
+      test('throws AssertionError if topic is invalid', () async {
+        const invalidTopic = 'test invalid = topic';
 
-    firebaseMessaging.setAutoInitEnabled(false);
+        expect(() => messaging!.subscribeToTopic(invalidTopic),
+            throwsAssertionError);
+      });
 
-    verify(mockChannel.invokeMethod<void>('setAutoInitEnabled', false));
-  });
+      test('verify delegate method is called with correct args', () async {
+        when(kMockMessagingPlatform.subscribeToTopic(any))
+            .thenAnswer((_) => Future<void>.value());
 
-  test('configure bad onBackgroundMessage', () {
-    expect(
-      () => firebaseMessaging.configure(
-        onBackgroundMessage: (dynamic message) => Future<dynamic>.value(),
-      ),
-      throwsArgumentError,
-    );
+        const topic = 'test-topic';
+
+        await messaging!.subscribeToTopic(topic);
+        verify(kMockMessagingPlatform.subscribeToTopic(topic));
+      });
+    });
+    group('unsubscribeFromTopic', () {
+      when(kMockMessagingPlatform.unsubscribeFromTopic(any))
+          .thenAnswer((_) => Future<void>.value());
+      test('verify delegate method is called with correct args', () async {
+        const topic = 'test-topic';
+
+        await messaging!.unsubscribeFromTopic(topic);
+        verify(kMockMessagingPlatform.unsubscribeFromTopic(topic));
+      });
+    });
   });
 }
-
-Future<dynamic> validOnBackgroundMessage(Map<String, dynamic> message) async {}
-
-class MockMethodChannel extends Mock implements MethodChannel {}
