@@ -88,7 +88,7 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
   FlutterMethodChannel *channel =
       [FlutterMethodChannel methodChannelWithName:kFLTFirebaseMessagingChannelName
-                                  binaryMessenger:[registrar messenger]];
+                                  binaryMessenger:[registrar binaryMessenger]];
   id instance = [[FLTFirebaseMessagingPlugin alloc] initWithFlutterMethodChannel:channel
                                                        andFlutterPluginRegistrar:registrar];
   // Register with internal FlutterFire plugin registry.
